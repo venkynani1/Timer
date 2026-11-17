@@ -1,0 +1,117 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 222 78% 5%;
+    --foreground: 200 40% 96%;
+    --card: 222 65% 8%;
+    --card-foreground: 200 40% 96%;
+    --popover: 222 65% 8%;
+    --popover-foreground: 200 40% 96%;
+    --primary: 189 100% 56%;
+    --primary-foreground: 222 80% 6%;
+    --secondary: 222 45% 15%;
+    --secondary-foreground: 200 40% 96%;
+    --muted: 222 40% 13%;
+    --muted-foreground: 210 20% 68%;
+    --accent: 262 85% 66%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 210 60% 30% / 0.35;
+    --input: 210 60% 40% / 0.4;
+    --ring: 189 100% 56%;
+    --radius: 0.75rem;
+
+    /* Energy phase palette (overridden per phase via data-phase) */
+    --e1: 189 100% 56%;
+    --e2: 210 100% 60%;
+    --e-glow: 189 100% 60%;
+  }
+
+  [data-phase="charged"], [data-phase="standby"] { --e1: 189 100% 56%; --e2: 205 100% 62%; --e-glow: 189 100% 60%; }
+  [data-phase="flux"] { --e1: 220 100% 66%; --e2: 266 92% 70%; --e-glow: 245 100% 70%; }
+  [data-phase="amber"] { --e1: 40 100% 58%; --e2: 28 100% 60%; --e-glow: 38 100% 58%; }
+  [data-phase="ember"] { --e1: 22 100% 58%; --e2: 6 92% 60%; --e-glow: 16 100% 58%; }
+  [data-phase="critical"] { --e1: 0 100% 64%; --e2: 350 100% 66%; --e-glow: 0 100% 62%; }
+  [data-phase="complete"] { --e1: 152 80% 55%; --e2: 189 100% 60%; --e-glow: 152 80% 55%; }
+  [data-phase="hold"] { --e1: 45 100% 62%; --e2: 45 100% 62%; --e-glow: 45 100% 60%; }
+
+  * { @apply border-border; }
+  html { color-scheme: dark; }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    background-color: #020611;
+  }
+}
+
+@layer utilities {
+  .tabular { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
+  .text-energy { color: hsl(var(--e1)); }
+  .glow-text { text-shadow: 0 0 24px hsl(var(--e-glow) / 0.55), 0 0 2px hsl(var(--e-glow) / 0.9); }
+  .glass {
+    background: linear-gradient(180deg, hsl(220 70% 12% / 0.55), hsl(222 75% 7% / 0.55));
+    border: 1px solid hsl(200 90% 60% / 0.14);
+    box-shadow: inset 0 1px 0 hsl(190 100% 80% / 0.06), 0 10px 40px -10px hsl(222 90% 2% / 0.8);
+    backdrop-filter: blur(10px);
+  }
+  .hairline { background: linear-gradient(90deg, transparent, hsl(var(--e1) / 0.6), transparent); height: 1px; }
+  .eyebrow { @apply font-tech uppercase tracking-[0.32em] text-[0.7rem] text-sky-200/60; }
+}
+
+/* ---------- Atmosphere ---------- */
+.grid-floor {
+  position: absolute;
+  inset: auto -50% -10% -50%;
+  height: 62%;
+  transform: perspective(700px) rotateX(64deg);
+  transform-origin: 50% 100%;
+  background-image:
+    linear-gradient(hsl(var(--e1) / 0.22) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--e1) / 0.22) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: linear-gradient(to top, black 10%, transparent 85%);
+  animation: grid-scroll 6s linear infinite;
+  will-change: background-position;
+  transition: background-image 2s ease;
+}
+@keyframes grid-scroll { to { background-position: 0 64px, 0 0; } }
+
+.particle {
+  position: absolute;
+  width: 2px; height: 2px;
+  border-radius: 9999px;
+  background: hsl(var(--e1) / 0.9);
+  box-shadow: 0 0 8px hsl(var(--e-glow) / 0.8);
+  animation: drift linear infinite;
+  will-change: transform, opacity;
+}
+@keyframes drift {
+  0% { transform: translate3d(0, 0, 0); opacity: 0; }
+  10% { opacity: 0.9; }
+  90% { opacity: 0.6; }
+  100% { transform: translate3d(var(--dx, 20px), -60vh, 0); opacity: 0; }
+}
+
+.scanlines {
+  background: repeating-linear-gradient(to bottom, hsl(0 0% 100% / 0.018) 0 1px, transparent 1px 3px);
+}
+
+.ring-spin { animation: spin 60s linear infinite; transform-origin: 50% 50%; transform-box: fill-box; }
+.ring-spin-rev { animation: spin 90s linear infinite reverse; transform-origin: 50% 50%; transform-box: fill-box; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.pulse-soft { animation: pulse-soft 2.4s ease-in-out infinite; }
+@keyframes pulse-soft { 50% { opacity: 0.55; } }
+
+.ticker-track { animation: ticker 28s linear infinite; }
+@keyframes ticker { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .grid-floor, .particle, .ring-spin, .ring-spin-rev, .pulse-soft, .ticker-track { animation: none !important; }
+  .particle { display: none; }
+}
+[data-motion="off"] .grid-floor, [data-motion="off"] .ring-spin, [data-motion="off"] .ring-spin-rev, [data-motion="off"] .pulse-soft { animation: none !important; }
+[data-motion="off"] .particle { display: none; }
