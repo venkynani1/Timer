@@ -55,6 +55,15 @@ Each layer below is enforced in Postgres, not only in the UI:
   - An explicit confirmation dialog.
 - Each action writes an **append-only audit row** with before and after deadlines. Update, delete and truncate on the audit log are blocked by triggers.
 
+### Mission reset (owner only)
+
+Hosts never see a Reset control. An **owner** can return a launched or completed mission to a fresh, un-launched clock, for example after a rehearsal. The reset button is in **Override → Reset mission** and requires:
+
+- the emergency override to be **armed**;
+- password re-entry, a written reason and typing `RESET`.
+
+It keeps duration, milestones, announcements and settings, disarms the override again, and writes a `MISSION_RESET` audit row with the erased start and deadline.
+
 ---
 
 ## Project layout
@@ -262,7 +271,7 @@ The database tests run the actual SQL, including RLS, roles and JWT claims, so t
 | 11 | Milestones at correct offsets | `engine: milestone transitions happen at the configured offsets` |
 | 12 | Announcements sync | `store: announcements synchronise across clients` |
 | 13 | Reconnection restores state | `store: reconnection restores authoritative state…` |
-| 14 | Override needs auth + audit | `db: emergency override …` (2 tests) |
+| 14 | Override needs auth + audit | `db: emergency override …` (2 tests), `db: owner reset …` (3 tests) |
 | 15 | Simulated 12-h run | `simulation: a simulated 12-hour run produces the correct completion time` |
 
 Further tests cover sleep/wake resync, jittery networks, no drift over 12 hours, locked timing, rate limiting, sanitisation and integration deadlines.

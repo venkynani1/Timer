@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ShieldAlert, Loader2 } from "lucide-react";
+import { ShieldAlert, Loader2, RotateCcw } from "lucide-react";
 import type { MissionView } from "@/hooks/use-mission";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,10 @@ import { adminFetch, Feedback, useAction } from "./api-client";
 import { Field } from "./setup-panel";
 import type { StaffRole } from "./dashboard";
 
-type Pending = { kind: "override"; action: "HOLD" | "RESUME" | "ADJUST"; delta?: number } | { kind: "arm"; enabled: boolean };
+type Pending =
+  | { kind: "override"; action: "HOLD" | "RESUME" | "ADJUST"; delta?: number }
+  | { kind: "arm"; enabled: boolean }
+  | { kind: "reset" };
 
 /**
  * Emergency override — disabled by default. Every action requires password
@@ -25,6 +28,7 @@ export function OverridePanel({ m, slug, role }: { m: MissionView; slug: string;
   const [reason, setReason] = useState("");
   const [password, setPassword] = useState("");
   const [delta, setDelta] = useState(10);
+  const [confirmText, setConfirmText] = useState("");
   const action = useAction();
   const state = clock.state;
 
@@ -33,15 +37,18 @@ export function OverridePanel({ m, slug, role }: { m: MissionView; slug: string;
     const r = await action.run(async () => {
       if (pending.kind === "arm") {
         await adminFetch("/api/admin/timer/arm", "POST", { event: slug, enabled: pending.enabled, reason, password });
+      } else if (pending.kind === "reset") {
+        await adminFetch("/api/admin/timer/reset", "POST", { event: slug, confirm: "RESET", reason, password });
       } else {
         await adminFetch("/api/admin/timer/override", "POST", { event: slug, action: pending.action, deltaSeconds: pending.delta ?? null, reason, password });
       }
       return true;
-    }, "Override applied and recorded in the audit log.");
+    }, pending.kind === "reset" ? "Mission reset to a fresh clock. Recorded in the audit log." : "Override applied and recorded in the audit log.");
     setPassword("");
     if (r) {
       setPending(null);
       setReason("");
+      setConfirmText("");
       m.refresh();
     }
   };
@@ -85,6 +92,25 @@ export function OverridePanel({ m, slug, role }: { m: MissionView; slug: string;
             </Button>
           </div>
         </div>
+        {role === "owner" && (
+          <div className="flex flex-col gap-3 rounded-xl border border-red-400/20 bg-red-950/20 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="font-display text-xs font-semibold tracking-[0.2em] text-red-100">Reset mission</div>
+              <div className="mt-1 text-xs text-sky-100/60">
+                Returns the clock to a fresh, un-launched {Math.round(clock.durationSeconds / 360) / 10}-hour mission. Milestones, announcements and settings
+                are kept. For rehearsals or a mistaken launch only. Requires the override to be armed, and disarms it afterwards.
+              </div>
+            </div>
+            <Button
+              variant="destructive"
+              className="shrink-0"
+              disabled={!clock.overrideEnabled || state === "NOT_STARTED"}
+              onClick={() => setPending({ kind: "reset" })}
+            >
+              <RotateCcw /> Reset mission
+            </Button>
+          </div>
+        )}
         <Feedback error={pending ? null : action.error} ok={action.ok} />
       </CardContent>
 
@@ -92,11 +118,26 @@ export function OverridePanel({ m, slug, role }: { m: MissionView; slug: string;
         <DialogContent className="border-red-400/30">
           <DialogHeader>
             <DialogTitle className="text-red-100">
-              {pending?.kind === "arm" ? (pending.enabled ? "Arm emergency override" : "Disarm emergency override") : `Emergency ${pending?.action}`}
+              {pending?.kind === "arm"
+                ? pending.enabled
+                  ? "Arm emergency override"
+                  : "Disarm emergency override"
+                : pending?.kind === "reset"
+                  ? "Reset the mission clock"
+                  : `Emergency ${pending?.action}`}
               {pending?.kind === "override" && pending.action === "ADJUST" && ` ${pending.delta! > 0 ? "+" : ""}${pending.delta! / 60} min`}
             </DialogTitle>
-            <DialogDescription>This changes official mission state. Confirm your identity and record why.</DialogDescription>
+            <DialogDescription>
+              {pending?.kind === "reset"
+                ? "Every screen returns to AWAITING LAUNCH and the official start and deadline are erased. This cannot be undone."
+                : "This changes official mission state. Confirm your identity and record why."}
+            </DialogDescription>
           </DialogHeader>
+          {pending?.kind === "reset" && (
+            <Field label="Type RESET to confirm">
+              <Input value={confirmText} onChange={(e) => setConfirmText(e.target.value.toUpperCase())} autoComplete="off" />
+            </Field>
+          )}
           <Field label="Reason (min. 10 characters)">
             <Textarea value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} />
           </Field>
@@ -106,7 +147,7 @@ export function OverridePanel({ m, slug, role }: { m: MissionView; slug: string;
           <Feedback error={action.error} ok={null} />
           <DialogFooter>
             <Button variant="outline" onClick={() => setPending(null)}>Cancel</Button>
-            <Button variant="destructive" disabled={reason.trim().length < 10 || !password || action.busy} onClick={submit}>
+            <Button variant="destructive" disabled={reason.trim().length < 10 || !password || action.busy || (pending?.kind === "reset" && confirmText !== "RESET")} onClick={submit}>
               {action.busy && <Loader2 className="animate-spin" />} Confirm
             </Button>
           </DialogFooter>

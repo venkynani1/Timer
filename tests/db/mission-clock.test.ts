@@ -249,3 +249,53 @@ describe("integration hooks", () => {
     expect(await open("goodies_selection_arena")).toBe(true); // not configured: never auto-closed
   });
 });
+
+describe("owner reset", () => {
+  const owner = (fresh = true) => ({ role: "authenticated" as const, sub: OWNER, signedInSecondsAgo: fresh ? 30 : 3600 });
+  const reason = "Rehearsal finished, preparing the real event";
+  const reset = (who = owner()) => as<Clock>(db, who, "select * from mission_clock.reset_mission($1, $2)", [eventId, reason]);
+
+  it("is refused to hosts, override admins, stale sessions and an unarmed override", async () => {
+    await start();
+    await expect(reset({ role: "authenticated", sub: HOST, signedInSecondsAgo: 10 } as never)).rejects.toThrow(/not authorised/i);
+    await expect(reset({ role: "authenticated", sub: OVERRIDER, signedInSecondsAgo: 10 } as never)).rejects.toThrow(/not authorised/i);
+    await expect(reset()).rejects.toThrow(/arm the emergency override/i);
+    await as(db, owner(), "select * from mission_clock.set_override_enabled($1, true, $2)", [eventId, reason]);
+    await expect(reset(owner(false))).rejects.toThrow(/re-authentication/i);
+    await expect(
+      as(db, owner(), "select * from mission_clock.reset_mission($1, 'oops')", [eventId]),
+    ).rejects.toThrow(/reason/i);
+    expect((await read()).rows[0].state).toBe("RUNNING");
+  });
+
+  it("returns a completed mission to a fresh clock, keeps milestones, disarms and audits", async () => {
+    const first = (await start()).rows[0];
+    await travel(db, eventId, 43_200);
+    await as(db, owner(), "select * from mission_clock.set_override_enabled($1, true, $2)", [eventId, reason]);
+
+    const r = (await reset()).rows[0];
+    expect(r.state).toBe("NOT_STARTED");
+    expect(r.started_at).toBeNull();
+    expect(r.ends_at).toBeNull();
+    expect(r.completed_at).toBeNull();
+    expect(r.duration_seconds).toBe(43_200);
+    const armed = (await db.query<{ override_enabled: boolean }>("select override_enabled from mission_clock.event_timers")).rows[0];
+    expect(armed.override_enabled).toBe(false);
+    expect((await db.query("select * from mission_clock.timer_milestones")).rows).toHaveLength(7);
+
+    const log = (await audit()).filter((a) => a.action === "MISSION_RESET");
+    expect(log).toHaveLength(1);
+    expect(log[0].reason).toBe(reason);
+    expect(JSON.stringify(log[0].details)).toContain(first.started_at!.toISOString().slice(0, 19));
+
+    // The real launch afterwards gets a brand-new 12-hour deadline.
+    const relaunch = (await start()).rows[0];
+    expect(relaunch.state).toBe("RUNNING");
+    expect(relaunch.ends_at!.getTime() - relaunch.started_at!.getTime()).toBe(43_200_000);
+  });
+
+  it("refuses to reset a mission that was never launched", async () => {
+    await as(db, owner(), "select * from mission_clock.set_override_enabled($1, true, $2)", [eventId, reason]);
+    await expect(reset()).rejects.toThrow(/nothing to reset/i);
+  });
+});

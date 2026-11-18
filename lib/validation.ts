@@ -70,3 +70,10 @@ export const integrationSchema = z.object({
   moduleKey: z.string().regex(/^[a-z0-9_]{2,60}$/),
   closeOnDeadline: z.boolean(),
 });
+
+export const resetSchema = z.object({
+  event: slugSchema,
+  confirm: z.literal("RESET"),
+  reason: cleanText(500).pipe(z.string().min(10, "Give a reason of at least 10 characters")),
+  password: z.string().min(1).max(256),
+});
