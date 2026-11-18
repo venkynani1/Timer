@@ -1,4 +1,5 @@
 "use client";
+import { DB_SCHEMA } from "@/lib/supabase/schema";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 import { mapAnnouncement, mapClock } from "./mappers";
@@ -29,14 +30,14 @@ export function supabaseTransport(slug: string): Transport {
       const filter = `event_id=eq.${eventId}`;
       const channel: RealtimeChannel = supabase
         .channel(`mission:${eventId}`)
-        .on("postgres_changes", { event: "*", schema: "public", table: "event_timers", filter }, (p) => {
+        .on("postgres_changes", { event: "*", schema: DB_SCHEMA, table: "event_timers", filter }, (p) => {
           if (p.new && "state" in p.new) h.onClock(mapClock(p.new));
         })
-        .on("postgres_changes", { event: "*", schema: "public", table: "timer_milestones", filter }, () => h.onMilestones())
-        .on("postgres_changes", { event: "*", schema: "public", table: "timer_announcements", filter }, (p) => {
+        .on("postgres_changes", { event: "*", schema: DB_SCHEMA, table: "timer_milestones", filter }, () => h.onMilestones())
+        .on("postgres_changes", { event: "*", schema: DB_SCHEMA, table: "timer_announcements", filter }, (p) => {
           if (p.new && "message" in p.new) h.onAnnouncement(mapAnnouncement(p.new));
         })
-        .on("postgres_changes", { event: "UPDATE", schema: "public", table: "events", filter: `id=eq.${eventId}` }, () => h.onEvent())
+        .on("postgres_changes", { event: "UPDATE", schema: DB_SCHEMA, table: "events", filter: `id=eq.${eventId}` }, () => h.onEvent())
         .subscribe((status) => {
           if (status === "SUBSCRIBED") h.onStatus("live");
           else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") h.onStatus("down");

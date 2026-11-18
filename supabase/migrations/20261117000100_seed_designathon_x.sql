@@ -1,17 +1,17 @@
 -- Seed: the Designathon X event, its 12-hour mission clock and default milestones.
 -- Safe to re-run; it never touches a clock that has already launched.
 
-insert into public.events (slug, name, subtitle, tagline)
+insert into mission_clock.events (slug, name, subtitle, tagline)
 values ('designathon-x', 'DESIGNATHON X', 'THE FINAL 12', '12 Hours. One Mission. Infinite Possibilities.')
 on conflict (slug) do nothing;
 
-insert into public.event_timers (event_id)
-select id from public.events where slug = 'designathon-x'
+insert into mission_clock.event_timers (event_id)
+select id from mission_clock.events where slug = 'designathon-x'
 on conflict (event_id) do nothing;
 
-insert into public.timer_milestones (event_id, offset_seconds, title, description, icon, theme, announcement)
+insert into mission_clock.timer_milestones (event_id, offset_seconds, title, description, icon, theme, announcement)
 select e.id, m.offset_seconds, m.title, m.description, m.icon, m.theme, m.announcement
-from public.events e
+from mission_clock.events e
 cross join (values
   (0,     'IGNITION',         'The mission clock is live. Form up, align, and lock your mission objective.', 'rocket',        'cyan',   'Mission is live. Twelve hours start now.'),
   (3600,  'DISCOVERY',        'Research the problem space. Talk to mentors. Map the users.',                 'telescope',     'cyan',   'Discovery phase has begun.'),
@@ -22,4 +22,4 @@ cross join (values
   (43200, 'MISSION COMPLETE', 'Pencils down. Submissions are closed.',                                       'flag',          'green',  null)
 ) as m(offset_seconds, title, description, icon, theme, announcement)
 where e.slug = 'designathon-x'
-  and not exists (select 1 from public.timer_milestones tm where tm.event_id = e.id);
+  and not exists (select 1 from mission_clock.timer_milestones tm where tm.event_id = e.id);

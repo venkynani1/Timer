@@ -17,10 +17,10 @@ let db: PGlite;
 let eventId: string;
 
 const host = { role: "authenticated" as const, sub: HOST };
-const start = () => as<Clock>(db, host, "select * from public.start_mission($1)", [eventId]);
-const read = () => as<Clock>(db, { role: "anon" }, "select * from public.mission_clock where event_id = $1", [eventId]);
+const start = () => as<Clock>(db, host, "select * from mission_clock.start_mission($1)", [eventId]);
+const read = () => as<Clock>(db, { role: "anon" }, "select * from mission_clock.mission_clock where event_id = $1", [eventId]);
 const audit = async () => (await db.query<{ action: string; reason: string | null; details: unknown }>(
-  "select action, reason, details from public.timer_audit_log where event_id = $1 order by id", [eventId])).rows;
+  "select action, reason, details from mission_clock.timer_audit_log where event_id = $1 order by id", [eventId])).rows;
 
 beforeEach(async () => {
   ({ db, eventId } = await bootDatabase());
@@ -65,16 +65,16 @@ describe("starting the mission", () => {
   it("locks the official start time and duration after launch", async () => {
     await start();
     await expect(
-      as(db, host, "select * from public.configure_mission($1, p_duration_seconds => 3600)", [eventId]),
+      as(db, host, "select * from mission_clock.configure_mission($1, p_duration_seconds => 3600)", [eventId]),
     ).rejects.toThrow(/locked/i);
     // Even a superuser-level plain UPDATE is refused by the guard trigger.
-    await expect(db.query("update public.event_timers set ends_at = ends_at + interval '1 hour'")).rejects.toThrow(
+    await expect(db.query("update mission_clock.event_timers set ends_at = ends_at + interval '1 hour'")).rejects.toThrow(
       /locked/i,
     );
   });
 
   it("allows duration to be configured before launch only", async () => {
-    const r = await as<Clock>(db, host, "select * from public.configure_mission($1, p_duration_seconds => 7200)", [eventId]);
+    const r = await as<Clock>(db, host, "select * from mission_clock.configure_mission($1, p_duration_seconds => 7200)", [eventId]);
     expect(r.rows[0].duration_seconds).toBe(7200);
     const s = (await start()).rows[0];
     expect(s.ends_at!.getTime() - s.started_at!.getTime()).toBe(7_200_000);
@@ -89,16 +89,16 @@ describe("completion", () => {
     expect(view.state).toBe("COMPLETED");
     expect(view.completed_at!.getTime()).toBe(view.ends_at!.getTime());
     // cron-style sweep persists it
-    await db.query("select public.finalize_overdue_missions()");
-    const raw = (await db.query<{ state: string }>("select state from public.event_timers")).rows[0];
+    await db.query("select mission_clock.finalize_overdue_missions()");
+    const raw = (await db.query<{ state: string }>("select state from mission_clock.event_timers")).rows[0];
     expect(raw.state).toBe("COMPLETED");
   });
 
   it("9. completion persists and finalisation is idempotent", async () => {
     await start();
     await travel(db, eventId, 50_000);
-    const a = (await as<Clock>(db, { role: "anon" }, "select * from public.finalize_mission($1)", [eventId])).rows[0];
-    const b = (await as<Clock>(db, { role: "anon" }, "select * from public.finalize_mission($1)", [eventId])).rows[0];
+    const a = (await as<Clock>(db, { role: "anon" }, "select * from mission_clock.finalize_mission($1)", [eventId])).rows[0];
+    const b = (await as<Clock>(db, { role: "anon" }, "select * from mission_clock.finalize_mission($1)", [eventId])).rows[0];
     expect(a.state).toBe("COMPLETED");
     expect(b.completed_at!.getTime()).toBe(a.completed_at!.getTime());
     expect(b.version).toBe(a.version);
@@ -111,45 +111,45 @@ describe("completion", () => {
   it("does not complete before the deadline", async () => {
     await start();
     await travel(db, eventId, 43_190);
-    const r = (await as<Clock>(db, { role: "anon" }, "select * from public.finalize_mission($1)", [eventId])).rows[0];
+    const r = (await as<Clock>(db, { role: "anon" }, "select * from mission_clock.finalize_mission($1)", [eventId])).rows[0];
     expect(r.state).toBe("RUNNING");
   });
 });
 
 describe("authorisation", () => {
   it("10. anonymous and non-staff users cannot start or modify the timer", async () => {
-    await expect(as(db, { role: "anon" }, "select * from public.start_mission($1)", [eventId])).rejects.toThrow(
+    await expect(as(db, { role: "anon" }, "select * from mission_clock.start_mission($1)", [eventId])).rejects.toThrow(
       /permission denied/i,
     );
     await expect(
-      as(db, { role: "authenticated", sub: STRANGER }, "select * from public.start_mission($1)", [eventId]),
+      as(db, { role: "authenticated", sub: STRANGER }, "select * from mission_clock.start_mission($1)", [eventId]),
     ).rejects.toThrow(/not authorised/i);
     await expect(
-      as(db, { role: "authenticated", sub: STRANGER }, "update public.event_timers set state = 'RUNNING'"),
+      as(db, { role: "authenticated", sub: STRANGER }, "update mission_clock.event_timers set state = 'RUNNING'"),
     ).rejects.toThrow(/permission denied/i);
     await expect(
-      as(db, { role: "anon" }, "insert into public.timer_announcements (event_id, message) values ($1, 'x')", [eventId]),
+      as(db, { role: "anon" }, "insert into mission_clock.timer_announcements (event_id, message) values ($1, 'x')", [eventId]),
     ).rejects.toThrow(/permission denied/i);
     await expect(
-      as(db, { role: "authenticated", sub: STRANGER }, "select * from public.publish_announcement($1, 'hi')", [eventId]),
+      as(db, { role: "authenticated", sub: STRANGER }, "select * from mission_clock.publish_announcement($1, 'hi')", [eventId]),
     ).rejects.toThrow(/not authorised/i);
     expect((await read()).rows[0].state).toBe("NOT_STARTED");
   });
 
   it("does not expose the audit log to the public", async () => {
     await start();
-    const anon = await as(db, { role: "anon" }, "select * from public.timer_audit_log").catch((e) => e);
+    const anon = await as(db, { role: "anon" }, "select * from mission_clock.timer_audit_log").catch((e) => e);
     expect(anon instanceof Error ? anon.message : "").toMatch(/permission denied/i);
-    const stranger = await as(db, { role: "authenticated", sub: STRANGER }, "select * from public.timer_audit_log");
+    const stranger = await as(db, { role: "authenticated", sub: STRANGER }, "select * from mission_clock.timer_audit_log");
     expect(stranger.rows).toHaveLength(0);
-    const staff = await as(db, host, "select * from public.timer_audit_log");
+    const staff = await as(db, host, "select * from mission_clock.timer_audit_log");
     expect(staff.rows.length).toBeGreaterThan(0);
   });
 
   it("rate-limits administrative actions", async () => {
     let error: unknown;
     for (let i = 0; i < 40 && !error; i++) {
-      error = await as(db, host, "select * from public.publish_announcement($1, $2)", [eventId, `Update ${i}`]).then(
+      error = await as(db, host, "select * from mission_clock.publish_announcement($1, $2)", [eventId, `Update ${i}`]).then(
         () => undefined,
         (e) => e,
       );
@@ -160,30 +160,30 @@ describe("authorisation", () => {
 
 describe("milestones & announcements", () => {
   it("locks milestone timing after launch but allows copy edits", async () => {
-    const m = (await db.query<{ id: string }>("select id from public.timer_milestones where offset_seconds = 3600")).rows[0];
+    const m = (await db.query<{ id: string }>("select id from mission_clock.timer_milestones where offset_seconds = 3600")).rows[0];
     await start();
     await expect(
-      as(db, host, "select * from public.upsert_milestone($1, $2, 7200, 'DISCOVERY', 'x', null, null, null, true)", [eventId, m.id]),
+      as(db, host, "select * from mission_clock.upsert_milestone($1, $2, 7200, 'DISCOVERY', 'x', null, null, null, true)", [eventId, m.id]),
     ).rejects.toThrow(/locked/i);
     const ok = await as<{ description: string; offset_seconds: number }>(
       db, host,
-      "select * from public.upsert_milestone($1, $2, null, 'DISCOVERY', 'Mentors are on the floor', 'telescope', 'cyan', null, null)",
+      "select * from mission_clock.upsert_milestone($1, $2, null, 'DISCOVERY', 'Mentors are on the floor', 'telescope', 'cyan', null, null)",
       [eventId, m.id],
     );
     expect(ok.rows[0].description).toBe("Mentors are on the floor");
     expect(ok.rows[0].offset_seconds).toBe(3600);
-    await expect(as(db, host, "select public.delete_milestone($1, $2)", [eventId, m.id])).rejects.toThrow(/locked/i);
+    await expect(as(db, host, "select mission_clock.delete_milestone($1, $2)", [eventId, m.id])).rejects.toThrow(/locked/i);
   });
 
   it("sanitises announcement text and stores priority/expiry", async () => {
     const r = await as<{ message: string; priority: string }>(
       db, host,
-      "select * from public.publish_announcement($1, $2, 'high', 30, null, now() + interval '10 minutes')",
+      "select * from mission_clock.publish_announcement($1, $2, 'high', 30, null, now() + interval '10 minutes')",
       [eventId, "  Mentor   review\u0007 begins\nin 15 minutes.  "],
     );
     expect(r.rows[0].message).toBe("Mentor review begins in 15 minutes.");
     expect(r.rows[0].priority).toBe("high");
-    await expect(as(db, host, "select * from public.publish_announcement($1, '   ')", [eventId])).rejects.toThrow(/required/i);
+    await expect(as(db, host, "select * from mission_clock.publish_announcement($1, '   ')", [eventId])).rejects.toThrow(/required/i);
   });
 });
 
@@ -195,35 +195,35 @@ describe("emergency override", () => {
   it("14. is disabled by default and refused to hosts", async () => {
     await start();
     await expect(
-      as(db, { ...host, signedInSecondsAgo: 10 }, "select * from public.emergency_override($1, 'HOLD', $2)", [eventId, reason]),
+      as(db, { ...host, signedInSecondsAgo: 10 }, "select * from mission_clock.emergency_override($1, 'HOLD', $2)", [eventId, reason]),
     ).rejects.toThrow(/not authorised/i);
     await expect(
-      as(db, ops(), "select * from public.emergency_override($1, 'HOLD', $2)", [eventId, reason]),
+      as(db, ops(), "select * from mission_clock.emergency_override($1, 'HOLD', $2)", [eventId, reason]),
     ).rejects.toThrow(/disabled/i);
   });
 
   it("14. requires owner arming, fresh re-authentication and a reason; always audits", async () => {
     await start();
     await expect(
-      as(db, { ...owner, signedInSecondsAgo: 3600 }, "select * from public.set_override_enabled($1, true, $2)", [eventId, reason]),
+      as(db, { ...owner, signedInSecondsAgo: 3600 }, "select * from mission_clock.set_override_enabled($1, true, $2)", [eventId, reason]),
     ).rejects.toThrow(/re-authentication/i);
-    await as(db, owner, "select * from public.set_override_enabled($1, true, $2)", [eventId, reason]);
+    await as(db, owner, "select * from mission_clock.set_override_enabled($1, true, $2)", [eventId, reason]);
 
     await expect(
-      as(db, ops(false), "select * from public.emergency_override($1, 'HOLD', $2)", [eventId, reason]),
+      as(db, ops(false), "select * from mission_clock.emergency_override($1, 'HOLD', $2)", [eventId, reason]),
     ).rejects.toThrow(/re-authentication/i);
     await expect(
-      as(db, ops(), "select * from public.emergency_override($1, 'HOLD', 'because')", [eventId]),
+      as(db, ops(), "select * from mission_clock.emergency_override($1, 'HOLD', 'because')", [eventId]),
     ).rejects.toThrow(/reason/i);
 
-    const held = (await as<Clock>(db, ops(), "select * from public.emergency_override($1, 'HOLD', $2)", [eventId, reason])).rows[0];
+    const held = (await as<Clock>(db, ops(), "select * from mission_clock.emergency_override($1, 'HOLD', $2)", [eventId, reason])).rows[0];
     expect(held.state).toBe("EMERGENCY_OVERRIDE");
     expect(held.held_remaining_ms).toBeGreaterThan(43_190_000);
 
-    const resumed = (await as<Clock>(db, ops(), "select * from public.emergency_override($1, 'RESUME', $2)", [eventId, reason])).rows[0];
+    const resumed = (await as<Clock>(db, ops(), "select * from mission_clock.emergency_override($1, 'RESUME', $2)", [eventId, reason])).rows[0];
     expect(resumed.state).toBe("RUNNING");
 
-    const adjusted = (await as<Clock>(db, ops(), "select * from public.emergency_override($1, 'ADJUST', $2, 600)", [eventId, reason])).rows[0];
+    const adjusted = (await as<Clock>(db, ops(), "select * from mission_clock.emergency_override($1, 'ADJUST', $2, 600)", [eventId, reason])).rows[0];
     expect(adjusted.ends_at!.getTime() - resumed.ends_at!.getTime()).toBe(600_000);
 
     const log = await audit();
@@ -232,17 +232,17 @@ describe("emergency override", () => {
     expect(overrides.every((a) => a.reason === reason)).toBe(true);
 
     // The audit trail is immutable.
-    await expect(db.query("update public.timer_audit_log set reason = 'edited'")).rejects.toThrow(/append-only/i);
-    await expect(db.query("delete from public.timer_audit_log")).rejects.toThrow(/append-only/i);
+    await expect(db.query("update mission_clock.timer_audit_log set reason = 'edited'")).rejects.toThrow(/append-only/i);
+    await expect(db.query("delete from mission_clock.timer_audit_log")).rejects.toThrow(/append-only/i);
   });
 });
 
 describe("integration hooks", () => {
   it("enforces module deadlines server-side only when configured", async () => {
     await start();
-    await as(db, host, "select public.set_module_integration($1, 'problem_statement_arena', true)", [eventId]);
+    await as(db, host, "select mission_clock.set_module_integration($1, 'problem_statement_arena', true)", [eventId]);
     const open = async (k: string) =>
-      (await as<{ open: boolean }>(db, { role: "anon" }, "select public.is_module_open($1, $2) as open", [eventId, k])).rows[0].open;
+      (await as<{ open: boolean }>(db, { role: "anon" }, "select mission_clock.is_module_open($1, $2) as open", [eventId, k])).rows[0].open;
     expect(await open("problem_statement_arena")).toBe(true);
     await travel(db, eventId, 43_200);
     expect(await open("problem_statement_arena")).toBe(false);

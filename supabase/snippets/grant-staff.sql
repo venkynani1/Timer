@@ -5,12 +5,12 @@
 --   override_admin  host + emergency override (only once an owner arms it)
 --   owner           override_admin + arm/disarm the emergency override
 
-insert into public.event_staff (event_id, user_id, role)
+insert into mission_clock.event_staff (event_id, user_id, role)
 select e.id, u.id, 'host'                       -- ← role
-from public.events e, auth.users u
+from mission_clock.events e, auth.users u
 where e.slug = 'designathon-x'
   and u.email = 'host@your-domain.example'      -- ← user
 on conflict (event_id, user_id) do update set role = excluded.role;
 
 -- Review staff:
--- select u.email, s.role from public.event_staff s join auth.users u on u.id = s.user_id;
+-- select u.email, s.role from mission_clock.event_staff s join auth.users u on u.id = s.user_id;

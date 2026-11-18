@@ -1,9 +1,11 @@
 import "server-only";
 import { NextResponse, type NextRequest } from "next/server";
-import { createClient, type SupabaseClient, type User } from "@supabase/supabase-js";
+import { createClient, type User } from "@supabase/supabase-js";
+import type { MissionDb } from "@/lib/supabase/schema";
 import type { ZodType, ZodTypeDef } from "zod";
 import { createUserSupabase } from "@/lib/supabase/server";
 import { isSupabaseConfigured, SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/env";
+import { DB_SCHEMA } from "@/lib/supabase/schema";
 
 const NO_STORE = { "Cache-Control": "no-store, max-age=0" };
 
@@ -33,7 +35,7 @@ function sameOrigin(req: NextRequest) {
 }
 
 export interface AdminContext<T> {
-  supabase: SupabaseClient;
+  supabase: MissionDb;
   user: User;
   eventId: string;
   body: T;
@@ -71,9 +73,9 @@ export function adminRoute<T>(schema: ZodType<T, ZodTypeDef, unknown>, handler: 
  * non-persisted sign-in and returns a client bound to that *new* session. The
  * database then checks the session's sign-in time (amr claim) is recent.
  */
-export async function reauthenticate(user: User, password: string): Promise<SupabaseClient | null> {
+export async function reauthenticate(user: User, password: string): Promise<MissionDb | null> {
   if (!user.email) return null;
-  const fresh = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+  const fresh = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { db: { schema: DB_SCHEMA }, auth: { persistSession: false, autoRefreshToken: false } });
   const { data, error } = await fresh.auth.signInWithPassword({ email: user.email, password });
   if (error || !data.session || data.user?.id !== user.id) return null;
   return fresh;

@@ -20,14 +20,14 @@ export async function bootDatabase() {
     insert into auth.users (id, email) values
       ('${HOST}', 'host@example.test'), ('${OVERRIDER}', 'ops@example.test'),
       ('${OWNER}', 'owner@example.test'), ('${STRANGER}', 'stranger@example.test');
-    insert into public.event_staff (event_id, user_id, role)
-      select id, '${HOST}', 'host' from public.events where slug = 'designathon-x';
-    insert into public.event_staff (event_id, user_id, role)
-      select id, '${OVERRIDER}', 'override_admin' from public.events where slug = 'designathon-x';
-    insert into public.event_staff (event_id, user_id, role)
-      select id, '${OWNER}', 'owner' from public.events where slug = 'designathon-x';
+    insert into mission_clock.event_staff (event_id, user_id, role)
+      select id, '${HOST}', 'host' from mission_clock.events where slug = 'designathon-x';
+    insert into mission_clock.event_staff (event_id, user_id, role)
+      select id, '${OVERRIDER}', 'override_admin' from mission_clock.events where slug = 'designathon-x';
+    insert into mission_clock.event_staff (event_id, user_id, role)
+      select id, '${OWNER}', 'owner' from mission_clock.events where slug = 'designathon-x';
   `);
-  const eventId = (await db.query<{ id: string }>("select id from public.events where slug = 'designathon-x'")).rows[0].id;
+  const eventId = (await db.query<{ id: string }>("select id from mission_clock.events where slug = 'designathon-x'")).rows[0].id;
   return { db, eventId };
 }
 
@@ -59,7 +59,7 @@ export async function as<T>(db: PGlite, who: Who, sql: string, params: unknown[]
 export async function travel(db: PGlite, eventId: string, seconds: number) {
   await db.exec("reset role; set session_replication_role = replica;");
   await db.query(
-    `update public.event_timers
+    `update mission_clock.event_timers
         set started_at = started_at - make_interval(secs => $2),
             ends_at    = ends_at    - make_interval(secs => $2),
             held_at    = held_at    - make_interval(secs => $2)

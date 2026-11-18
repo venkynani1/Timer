@@ -1,5 +1,5 @@
 import "server-only";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { MissionDb } from "@/lib/supabase/schema";
 import { mapAnnouncement, mapClock, mapEvent, mapMilestone } from "@/lib/timer/mappers";
 import type { MissionBundle } from "@/lib/timer/types";
 
@@ -10,7 +10,7 @@ export class NotFoundError extends Error {}
  * persists completion first (idempotent), so the DB record reflects reality
  * even when nobody was watching.
  */
-export async function loadMission(supabase: SupabaseClient, slug: string): Promise<MissionBundle> {
+export async function loadMission(supabase: MissionDb, slug: string): Promise<MissionBundle> {
   const { data: event, error: evErr } = await supabase
     .from("events")
     .select("id, slug, name, subtitle, tagline")
